@@ -88,6 +88,12 @@ public struct Response: Identifiable, Equatable, Hashable, Codable, Sendable {
 		}
 	}
 
+	/// Usage statistics for transcription events (duration-based, used by whisper model)
+	public struct TranscriptionUsage: Equatable, Hashable, Codable, Sendable {
+		public let type: String
+		public let seconds: Int
+	}
+
 	/// The unique ID of the response.
 	public let id: String
 
