@@ -17,6 +17,7 @@ public final class Conversation: @unchecked Sendable {
 	private var task: Task<Void, Error>!
 	private let sessionUpdateCallback: SessionUpdateCallback?
 	private let errorStream: AsyncStream<ServerError>.Continuation
+    private let eventStream: AsyncStream<ServerEvent>.Continuation
 
 	/// Whether to print debug information to the console.
 	public var debug: Bool
@@ -33,6 +34,10 @@ public final class Conversation: @unchecked Sendable {
 
 	/// A stream of errors that occur during the conversation.
 	public let errors: AsyncStream<ServerError>
+    
+    /// A stream of all server events that occur during the conversation.
+    /// This stream allows external observers to track all events without modifying conversation functionality.
+    public let allEvents: AsyncStream<ServerEvent>
 
 	/// The current session for this conversation.
 	public private(set) var session: Session?
@@ -65,6 +70,7 @@ public final class Conversation: @unchecked Sendable {
 		client = try! WebRTCConnector.create()
 		self.sessionUpdateCallback = sessionUpdateCallback
 		(errors, errorStream) = AsyncStream.makeStream(of: ServerError.self)
+        (allEvents, eventStream) = AsyncStream.makeStream(of: ServerEvent.self)
 
 		task = Task.detached { [weak self] in
 			guard let self else { return }
@@ -85,6 +91,7 @@ public final class Conversation: @unchecked Sendable {
 	deinit {
 		client.disconnect()
 		errorStream.finish()
+        eventStream.finish()
 	}
 
 	public func connect(using request: URLRequest) async throws {
@@ -101,6 +108,15 @@ public final class Conversation: @unchecked Sendable {
 			throw ConversationError.invalidEphemeralKey
 		}
 	}
+    
+    /// Gracefully disconnect the conversation, shutting down the client connection and cleaning up resources.
+    /// This will close the WebRTC connection and finish all event streams.
+    public func disconnect() {
+        task.cancel()
+        client.disconnect()
+        errorStream.finish()
+        eventStream.finish()
+    }
 
 	/// Wait for the connection to be established
 	public func waitForConnection() async {
@@ -165,6 +181,9 @@ public final class Conversation: @unchecked Sendable {
 /// Event handling private API
 private extension Conversation {
 	func handleEvent(_ event: ServerEvent) throws {
+        // Yield the event to external observers first
+        eventStream.yield(event)
+        
 		if debug { print(event) }
 
 		switch event {
